@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Greedy Quest -- human vs AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="brand"><span>Greedy Quest</span><span class="dot">&#9670;</span></div>
+  <div class="nav-links">
+    <a href="{{ url_for('game_page') }}">Play again</a>
+    <a href="{{ url_for('index') }}">Home</a>
+  </div>
+</nav>
+
+<div class="results-wrap">
+  <h1 style="font-size:2rem;">Human vs AI</h1>
+  <p style="color:var(--text-muted);">
+    A side-by-side comparison from your most recent attempt on this map.
+  </p>
+
+  <div id="no-data" style="display:none;color:var(--text-faint);margin-top:30px;">
+    No comparison yet &mdash; play a map yourself and run "Solve with AI" on it,
+    then come back here.
+    <div style="margin-top:16px;"><a class="btn btn-teal" href="{{ url_for('game_page') }}">Go play &rarr;</a></div>
+  </div>
+
+  <div id="vs-content" style="display:none;">
+    <div class="vs-row">
+      <div class="vs-card">
+        <h3>player</h3>
+        <div class="stat-table">
+          <div class="row"><span class="k">Moves</span><span class="v" id="p-moves">--</span></div>
+          <div class="row"><span class="k">Time</span><span class="v" id="p-time">--</span></div>
+          <div class="row"><span class="k">Path length</span><span class="v" id="p-path">--</span></div>
+          <div class="row"><span class="k">Score</span><span class="v" id="p-score">--</span></div>
+        </div>
+      </div>
+      <div class="vs-divider">vs</div>
+      <div class="vs-card">
+        <h3>gbfs</h3>
+        <div class="stat-table">
+          <div class="row"><span class="k">Nodes explored</span><span class="v" id="a-explored">--</span></div>
+          <div class="row"><span class="k">Search time</span><span class="v" id="a-time">--</span></div>
+          <div class="row"><span class="k">Path length</span><span class="v" id="a-path">--</span></div>
+          <div class="row"><span class="k">Status</span><span class="v" id="a-status">--</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section" style="border:1px solid var(--border);border-radius:6px;">
+      <h3>search efficiency</h3>
+      <div class="stat-table">
+        <div class="row"><span class="k">Player path vs AI path</span><span class="v" id="cmp-path-diff">--</span></div>
+        <div class="row"><span class="k">Exploration ratio (nodes / path length)</span><span class="v" id="cmp-ratio">--</span></div>
+      </div>
+    </div>
+
+    <p style="color:var(--text-faint);font-size:0.85rem;margin-top:18px;">
+      Note: GBFS is heuristic-driven and is not guaranteed to find the
+      shortest possible path &mdash; a shorter AI path here reflects this
+      particular map, not a general guarantee.
+    </p>
+  </div>
+</div>
+
+<footer class="site-footer">Greedy Quest &mdash; an AI Project-Based Learning demo.</footer>
+
+<script>
+(function () {
+  var raw = localStorage.getItem('greedyQuestComparison');
+  if (!raw) {
+    document.getElementById('no-data').style.display = 'block';
+    return;
+  }
+  var data;
+  try { data = JSON.parse(raw); } catch (e) {
+    document.getElementById('no-data').style.display = 'block';
+    return;
+  }
+  document.getElementById('vs-content').style.display = 'block';
+
+  var player = data.player || {};
+  var ai = data.ai || {};
+
+  document.getElementById('p-moves').textContent = player.moves ?? '--';
+  document.getElementById('p-time').textContent = player.time != null ? player.time.toFixed(1) + 's' : '--';
+  document.getElementById('p-path').textContent = player.moves ?? '--';
+  document.getElementById('p-score').textContent = player.score ?? '--';
+
+  document.getElementById('a-explored').textContent = ai.nodes_explored ?? '--';
+  document.getElementById('a-time').textContent = ai.execution_time_ms != null ? ai.execution_time_ms.toFixed(2) + 'ms' : '--';
+  document.getElementById('a-path').textContent = ai.path_length ?? '--';
+  document.getElementById('a-status').textContent = ai.found ? 'FOUND' : 'NOT FOUND';
+
+  if (player.moves != null && ai.path_length != null) {
+    var diff = player.moves - ai.path_length;
+    var diffText = diff === 0 ? 'Tied' : (diff > 0 ? ('AI shorter by ' + diff) : ('Player shorter by ' + Math.abs(diff)));
+    document.getElementById('cmp-path-diff').textContent = diffText;
+  }
+  if (ai.nodes_explored != null && ai.path_length) {
+    document.getElementById('cmp-ratio').textContent = (ai.nodes_explored / ai.path_length).toFixed(2);
+  }
+})();
+</script>
+
+</body>
+</html>
