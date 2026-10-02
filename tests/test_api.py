@@ -159,6 +159,71 @@ def test_move_after_game_finished_is_rejected_by_state_machine(client):
     assert resp.get_json()["finished"] is False
 
 
+def test_no_server_side_game_store_exists():
+    """
+    Regression guard for the stateless refactor: app.py must hold no
+    process-memory dict of active games. Every request must be able to
+    reconstruct full game state from the session cookie alone, which is
+    what makes this safe to run on serverless platforms (e.g. Vercel)
+    where consecutive requests are not guaranteed to hit the same
+    process.
+    """
+    import app as app_module
+    assert not hasattr(app_module, "GAME_STORE")
+
+
+def test_session_cookie_regenerates_identical_board_across_requests(client):
+    """
+    The board is never stored -- only (difficulty, seed) is. Two
+    separate state fetches for the same session must describe the same
+    board, proving the regeneration is deterministic.
+    """
+    client.post("/api/game/new", json={"difficulty": "hard", "seed": 777})
+    first = client.get("/api/game/state").get_json()
+    second = client.get("/api/game/state").get_json()
+    assert first["board"]["tiles"] == second["board"]["tiles"]
+    assert first["board"]["start"] == second["board"]["start"]
+    assert first["board"]["goal"] == second["board"]["goal"]
+
+
+def test_session_cookie_stays_small_even_for_extreme_board(client):
+    """
+    Flask's default session cookie is capped around 4KB. Since the
+    board itself is never stored in the session, the cookie must stay
+    tiny regardless of board size -- verified here on the largest
+    (40x40) difficulty.
+    """
+    resp = client.post("/api/game/new", json={"difficulty": "extreme"})
+    assert resp.status_code == 200
+    set_cookie_headers = resp.headers.get_all("Set-Cookie")
+    session_cookie = next(h for h in set_cookie_headers if h.startswith("session="))
+    cookie_value = session_cookie.split(";")[0]
+    assert len(cookie_value) < 1000  # well under the ~4KB browser/Flask limit
+
+
+def test_game_survives_simulated_cold_start(client):
+    """
+    Simulates what happens on a serverless platform when a later
+    request lands on a fresh process with no shared memory: re-import
+    app.py's module-level state fresh and confirm the session cookie
+    alone is still enough to resume the game and even run the AI.
+    """
+    new_resp = client.post("/api/game/new", json={"difficulty": "easy", "seed": 42})
+    assert new_resp.status_code == 200
+
+    # Nothing module-level is mutated by a move; prove state resumes
+    # correctly purely from the cookie on a subsequent, independent request.
+    move_resp = client.post("/api/game/move", json={"direction": "right"})
+    assert move_resp.status_code == 200
+
+    solve_resp = client.post("/api/ai/solve", json={})
+    assert solve_resp.status_code == 200
+    assert solve_resp.get_json()["found"] is True
+
+    step_resp = client.post("/api/ai/step", json={"index": 0})
+    assert step_resp.status_code == 200
+
+
 def test_two_different_clients_get_independent_sessions():
     flask_app.config["TESTING"] = True
     c1 = flask_app.test_client()

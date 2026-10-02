@@ -3,11 +3,23 @@ app.py
 
 GREEDY QUEST -- Flask backend.
 
-State model: no database (per spec section 29). Each browser gets a
-session cookie holding a game_id (uuid4); the actual GameState objects
-live server-side in an in-memory dict (GAME_STORE). This is the right
-tradeoff for a single-process academic demo -- restarting the server
-clears all games, which is fine here.
+State model: fully stateless across requests, which matters for
+serverless hosting (e.g. Vercel), where successive requests from the
+same browser are not guaranteed to land on the same process. Instead
+of holding GameState objects in server memory, each session cookie
+holds a small JSON descriptor:
+
+    {difficulty, level_id, seed, player_pos, moves, traps_hit,
+     started_at, finished, finished_at, solved}
+
+The board itself is never stored anywhere -- it is regenerated
+deterministically on every request from (difficulty, seed) via
+generate_random_map(), or from level_id via get_challenge_level().
+Both are pure functions of their inputs, so the regenerated board is
+always byte-for-byte identical to the one the player started on. This
+keeps the cookie tiny (well under the 4KB limit) regardless of board
+size, and means any process, anywhere, can serve any request for a
+session with no shared memory or external database required.
 
 Every endpoint validates its own input and never trusts client-supplied
 coordinates blindly (spec section 33).
@@ -16,14 +28,14 @@ coordinates blindly (spec section 33).
 from __future__ import annotations
 
 import os
-import uuid
+import random
 from typing import Optional
 
 from flask import Flask, jsonify, render_template, request, session
 
-from algorithms.greedy_best_first import SearchResult, greedy_best_first_search
+from algorithms.greedy_best_first import greedy_best_first_search
 from game.board import DIFFICULTY_SETTINGS, Board
-from game.game_state import GameState, MOVE_DELTAS
+from game.game_state import GameState
 from game.map_generator import (
     CHALLENGE_LEVEL_NAMES,
     generate_random_map,
@@ -33,8 +45,7 @@ from game.map_generator import (
 app = Flask(__name__)
 app.secret_key = os.environ.get("GREEDY_QUEST_SECRET_KEY", "dev-secret-change-me")
 
-# In-memory server-side store: game_id -> {"state": GameState, "last_solve": SearchResult|None}
-GAME_STORE: dict[str, dict] = {}
+SESSION_KEY = "game"
 
 DIRECTION_ALIASES = {
     "up": "up", "w": "up", "arrowup": "up",
@@ -45,32 +56,58 @@ DIRECTION_ALIASES = {
 
 
 # --------------------------------------------------------------------
-# Helpers
+# Helpers: descriptor <-> board/state reconstruction
 # --------------------------------------------------------------------
 
-def _get_game_id(create_if_missing: bool = False) -> Optional[str]:
-    game_id = session.get("game_id")
-    if game_id is None and create_if_missing:
-        game_id = str(uuid.uuid4())
-        session["game_id"] = game_id
-    return game_id
+def _build_board(descriptor: dict) -> Board:
+    """Deterministically regenerate the board from the tiny descriptor."""
+    if descriptor.get("level_id") is not None:
+        return get_challenge_level(descriptor["level_id"])
+    return generate_random_map(descriptor["difficulty"], seed=descriptor["seed"])
 
 
-def _get_entry() -> Optional[dict]:
-    game_id = _get_game_id()
-    if game_id is None:
-        return None
-    return GAME_STORE.get(game_id)
+def _build_state(descriptor: dict) -> GameState:
+    board = _build_board(descriptor)
+    state = GameState(
+        board=board,
+        difficulty=descriptor["difficulty"],
+        player_pos=tuple(descriptor["player_pos"]),
+        moves=descriptor["moves"],
+        traps_hit=descriptor["traps_hit"],
+        finished=descriptor["finished"],
+    )
+    state.started_at = descriptor["started_at"]
+    state.finished_at = descriptor["finished_at"]
+    return state
 
 
-def _require_entry():
-    entry = _get_entry()
-    if entry is None:
+def _save_descriptor(state: GameState, difficulty, level_id, seed, solved: bool) -> None:
+    session[SESSION_KEY] = {
+        "difficulty": difficulty,
+        "level_id": level_id,
+        "seed": seed,
+        "player_pos": list(state.player_pos),
+        "moves": state.moves,
+        "traps_hit": state.traps_hit,
+        "started_at": state.started_at,
+        "finished": state.finished,
+        "finished_at": state.finished_at,
+        "solved": solved,
+    }
+
+
+def _get_descriptor() -> Optional[dict]:
+    return session.get(SESSION_KEY)
+
+
+def _require_descriptor():
+    descriptor = _get_descriptor()
+    if descriptor is None:
         return None, (jsonify({
             "error": "no_active_game",
             "message": "No active game for this session. Call /api/game/new first.",
         }), 404)
-    return entry, None
+    return descriptor, None
 
 
 def _error(message: str, status: int = 400):
@@ -121,20 +158,24 @@ def api_game_new():
             return _error(f"level_id must be one of {sorted(CHALLENGE_LEVEL_NAMES)}")
         board = get_challenge_level(level_id)
         difficulty = "challenge"
+        seed_val = None
     else:
         if difficulty not in DIFFICULTY_SETTINGS:
             return _error(f"difficulty must be one of {sorted(DIFFICULTY_SETTINGS)}")
-        seed_val = None
         if seed is not None:
             try:
                 seed_val = int(seed)
             except (TypeError, ValueError):
                 return _error("seed must be an integer")
+        else:
+            # Always pin a concrete seed so the board can be deterministically
+            # regenerated on every future request -- this is what lets the
+            # session stay stateless (see module docstring).
+            seed_val = random.randint(0, 2**31 - 1)
         board = generate_random_map(difficulty, seed=seed_val)
 
-    game_id = _get_game_id(create_if_missing=True)
     state = GameState.new(board, difficulty)
-    GAME_STORE[game_id] = {"state": state, "last_solve": None}
+    _save_descriptor(state, difficulty, level_id, seed_val, solved=False)
 
     response = state.to_dict()
     if level_id is not None:
@@ -145,15 +186,16 @@ def api_game_new():
 
 @app.route("/api/game/state", methods=["GET"])
 def api_game_state():
-    entry, err = _require_entry()
+    descriptor, err = _require_descriptor()
     if err:
         return err
-    return jsonify(entry["state"].to_dict())
+    state = _build_state(descriptor)
+    return jsonify(state.to_dict())
 
 
 @app.route("/api/game/move", methods=["POST"])
 def api_game_move():
-    entry, err = _require_entry()
+    descriptor, err = _require_descriptor()
     if err:
         return err
 
@@ -163,8 +205,12 @@ def api_game_move():
     if direction is None:
         return _error(f"direction must be one of {sorted(set(DIRECTION_ALIASES))}")
 
-    state: GameState = entry["state"]
+    state = _build_state(descriptor)
     result = state.move(direction)
+    _save_descriptor(
+        state, descriptor["difficulty"], descriptor["level_id"], descriptor["seed"],
+        solved=descriptor["solved"],
+    )
     result["state"] = state.to_dict()
     return jsonify(result)
 
@@ -172,13 +218,15 @@ def api_game_move():
 @app.route("/api/game/reset", methods=["POST"])
 def api_game_reset():
     """Reset the player back to start on the SAME board (same map, fresh attempt)."""
-    entry, err = _require_entry()
+    descriptor, err = _require_descriptor()
     if err:
         return err
-    old_state: GameState = entry["state"]
-    new_state = GameState.new(old_state.board, old_state.difficulty)
-    entry["state"] = new_state
-    entry["last_solve"] = None
+    board = _build_board(descriptor)
+    new_state = GameState.new(board, descriptor["difficulty"])
+    _save_descriptor(
+        new_state, descriptor["difficulty"], descriptor["level_id"], descriptor["seed"],
+        solved=False,
+    )
     return jsonify(new_state.to_dict())
 
 
@@ -191,36 +239,36 @@ def api_ai_solve():
     """
     Runs the real GBFS solver on the current board and returns the full
     step-by-step trace (for 'Watch AI Think' replay) plus the final path
-    and performance stats. The trace is cached server-side so /api/ai/step
-    can serve individual steps without re-running the search.
+    and performance stats. Nothing is cached server-side -- the board is
+    deterministic from the session descriptor, and GBFS on even the
+    largest (40x40) board completes in well under a second, so
+    /api/ai/step below simply re-runs it rather than relying on any
+    server-side cache surviving between requests.
     """
-    entry, err = _require_entry()
+    descriptor, err = _require_descriptor()
     if err:
         return err
 
-    state: GameState = entry["state"]
-    board: Board = state.board
+    board = _build_board(descriptor)
+    result = greedy_best_first_search(board.walkability_grid(), board.start, board.goal)
 
-    result: SearchResult = greedy_best_first_search(
-        board.walkability_grid(), board.start, board.goal
-    )
-    entry["last_solve"] = result
+    descriptor["solved"] = True
+    session[SESSION_KEY] = descriptor
     return jsonify(result.to_dict())
 
 
 @app.route("/api/ai/step", methods=["POST"])
 def api_ai_step():
     """
-    Returns a single step from the most recent /api/ai/solve trace, by
-    index (0-based). Lets the frontend drive STEP / PLAY / PAUSE controls
-    without re-sending the whole trace or re-running the search.
+    Returns a single step from the search trace, by index (0-based).
+    The search is deterministic given the board, so it is simply
+    re-run here rather than read from a cache -- see api_ai_solve().
     """
-    entry, err = _require_entry()
+    descriptor, err = _require_descriptor()
     if err:
         return err
 
-    last_solve: Optional[SearchResult] = entry.get("last_solve")
-    if last_solve is None:
+    if not descriptor.get("solved"):
         return _error("No solve has been run yet. Call /api/ai/solve first.", 409)
 
     payload = request.get_json(silent=True) or {}
@@ -229,12 +277,15 @@ def api_ai_step():
     except (TypeError, ValueError):
         return _error("index must be an integer")
 
-    total_steps = len(last_solve.steps)
+    board = _build_board(descriptor)
+    result = greedy_best_first_search(board.walkability_grid(), board.start, board.goal)
+
+    total_steps = len(result.steps)
     if index < 0 or index >= total_steps:
         return _error(f"index out of range (0..{total_steps - 1})")
 
     return jsonify({
-        "step": last_solve.steps[index].to_dict(),
+        "step": result.steps[index].to_dict(),
         "index": index,
         "total_steps": total_steps,
         "is_last": index == total_steps - 1,
