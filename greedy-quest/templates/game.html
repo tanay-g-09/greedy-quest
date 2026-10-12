@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Greedy Quest -- play</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
+<body>
+<div class="game-shell">
+
+  <div class="hud">
+    <div class="hud-title">
+      <a href="{{ url_for('index') }}" style="text-decoration:none;color:inherit;">
+        <span>Greedy Quest</span><span class="dot">&#9670;</span>
+      </a>
+      <span id="difficulty-badge">easy</span>
+    </div>
+
+    <div class="hud-stats">
+      <div class="hud-stat"><span class="label">moves</span><span class="value" id="stat-moves">0</span></div>
+      <div class="hud-stat"><span class="label">time</span><span class="value" id="stat-time">0.0s</span></div>
+      <div class="hud-stat"><span class="label">distance</span><span class="value" id="stat-distance">--</span></div>
+      <div class="hud-stat"><span class="label">score</span><span class="value" id="stat-score">1000</span></div>
+    </div>
+
+    <div class="hud-actions">
+      <button class="icon-btn" id="btn-pause" aria-pressed="false" title="Pause or resume the game (P)">Pause</button>
+      <button class="icon-btn" id="btn-reset-position" title="Restart this map from the start">Reset</button>
+    </div>
+  </div>
+
+  <div class="game-main">
+
+    <div class="board-pane">
+      <canvas id="board-canvas" width="600" height="600" tabindex="0"
+              aria-label="Game board. Use arrow keys or WASD to move the explorer."></canvas>
+
+      <div class="dpad" aria-hidden="false">
+        <button class="up" data-dir="up" aria-label="Move up">&#8593;</button>
+        <button class="left" data-dir="left" aria-label="Move left">&#8592;</button>
+        <button class="down" data-dir="down" aria-label="Move down">&#8595;</button>
+        <button class="right" data-dir="right" aria-label="Move right">&#8594;</button>
+      </div>
+
+      <div class="board-overlay-msg" id="pause-overlay" role="dialog" aria-label="Game paused">
+        <div class="treasure-card pause-card">
+          <h2>PAUSED</h2>
+          <p>The timer is frozen. Press <kbd>P</kbd> or Resume to continue.</p>
+          <button class="btn btn-primary" id="btn-resume">Resume</button>
+        </div>
+      </div>
+
+      <div class="board-overlay-msg" id="treasure-overlay">
+        <div class="treasure-card">
+          <h2 id="treasure-title">TREASURE FOUND!</h2>
+          <div class="stat-row"><span>Total moves</span><span class="v" id="tc-moves">0</span></div>
+          <div class="stat-row"><span>Time</span><span class="v" id="tc-time">0.0s</span></div>
+          <div class="stat-row"><span>Path length</span><span class="v" id="tc-path">0</span></div>
+          <div class="stat-row"><span>Score</span><span class="v" id="tc-score">0</span></div>
+          <button class="btn btn-primary" id="btn-play-again">New map</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="side-panel">
+
+      <div class="panel-section">
+        <h3>setup</h3>
+        <div class="select-row">
+          <label for="difficulty-select">Difficulty</label>
+          <select id="difficulty-select">
+            <option value="easy">Easy &middot; 10&times;10</option>
+            <option value="medium">Medium &middot; 20&times;20</option>
+            <option value="hard">Hard &middot; 30&times;30</option>
+            <option value="extreme">Extreme &middot; 40&times;40</option>
+          </select>
+        </div>
+        <div class="select-row">
+          <label for="level-select">Challenge level</label>
+          <select id="level-select">
+            <option value="">(random map)</option>
+            <option value="1">Level 1 &middot; First Steps</option>
+            <option value="2">Level 2 &middot; The Maze</option>
+            <option value="3">Level 3 &middot; Greedy Trap</option>
+            <option value="4">Level 4 &middot; Dead End</option>
+            <option value="5">Level 5 &middot; Treasure Rush</option>
+            <option value="6">Level 6 &middot; Extreme Hunt</option>
+          </select>
+        </div>
+        <button class="btn btn-primary full" id="btn-new-map" style="width:100%">New map</button>
+      </div>
+
+      <div class="panel-section">
+        <h3>ai navigator</h3>
+        <div class="control-grid">
+          <button class="btn btn-teal full" id="btn-ai-solve" title="Run the search and show the final path">Solve with AI</button>
+          <button class="btn full" id="btn-watch-ai" title="Replay the search step by step">Watch AI think</button>
+          <button class="btn" id="btn-step" title="Advance the search by one step">Step</button>
+          <button class="btn" id="btn-play-pause-ai" title="Play or pause the search replay">Play</button>
+          <button class="btn full" id="btn-reset-ai" title="Clear the search overlay">Reset search</button>
+        </div>
+        <div class="speed-row">
+          <button data-speed="slow">Slow</button>
+          <button data-speed="medium" class="active">Medium</button>
+          <button data-speed="fast">Fast</button>
+        </div>
+        <div class="toggle-row">
+          <span>Show heuristics</span>
+          <input type="checkbox" id="toggle-heuristics">
+        </div>
+        <div class="toggle-row">
+          <span>Show step numbers</span>
+          <input type="checkbox" id="toggle-numbers">
+        </div>
+      </div>
+
+      <div class="panel-section readout">
+        <h3>search readout</h3>
+        <div id="readout-current" class="readout-current">
+          <span class="readout-empty">Run "Solve with AI" or "Watch AI think" to see live search state.</span>
+        </div>
+        <div id="readout-neighbors" class="readout-list"></div>
+        <div class="step-progress" id="step-progress"></div>
+      </div>
+
+      <div class="panel-section">
+        <h3>ai performance</h3>
+        <div class="stat-table" id="perf-table">
+          <div class="row"><span class="k">Algorithm</span><span class="v">GBFS</span></div>
+          <div class="row"><span class="k">Heuristic</span><span class="v">Manhattan</span></div>
+          <div class="row"><span class="k">Nodes explored</span><span class="v" id="perf-explored">--</span></div>
+          <div class="row"><span class="k">Path length</span><span class="v" id="perf-path">--</span></div>
+          <div class="row"><span class="k">Search time</span><span class="v" id="perf-time">--</span></div>
+          <div class="row"><span class="k">Status</span><span class="v" id="perf-status">--</span></div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3>legend</h3>
+        <div class="legend">
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--gold)"></span>start / goal</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#3a4257"></span>wall</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--coral)"></span>trap</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--teal)"></span>frontier</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--blue)"></span>explored</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:#ffb020"></span>current node</div>
+          <div class="legend-item"><span class="legend-swatch" style="background:var(--violet)"></span>final path</div>
+        </div>
+      </div>
+
+    </aside>
+  </div>
+
+  <div class="edu-panel" id="edu-panel">
+    <div class="edu-toggle" id="edu-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="edu-body">
+      <h3>How does Greedy Best-First Search work?</h3>
+      <span class="chev">&#8250;</span>
+    </div>
+    <div class="edu-body" id="edu-body">
+      <p>Greedy Best-First Search always expands whichever node in the open list currently
+      <em>looks</em> closest to the goal &mdash; it orders that list purely by the heuristic estimate:</p>
+      <div class="formula-box">f(n) = h(n)</div>
+      <p>For this grid, the heuristic is Manhattan distance:</p>
+      <div class="formula-box">h(n) = |x &minus; goal_x| + |y &minus; goal_y|</div>
+      <p>Unlike A*, GBFS never adds in <code>g(n)</code>, the cost already spent reaching a node.
+      That makes it fast and goal-directed, but it can be lured into a detour by an obstacle sitting
+      between it and the direction that looks most promising &mdash; see Challenge Level 3, "Greedy Trap".</p>
+      <p><a href="{{ url_for('algorithm_page') }}" class="btn btn-ghost" style="display:inline-block;margin-top:6px;">Full algorithm comparison &rarr;</a></p>
+    </div>
+  </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
+<script src="{{ url_for('static', filename='js/game.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ai.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

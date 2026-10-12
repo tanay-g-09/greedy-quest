@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Greedy Quest -- how it works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/game.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="brand"><span>Greedy Quest</span><span class="dot">&#9670;</span></div>
+  <div class="nav-links">
+    <a href="{{ url_for('game_page') }}">Play</a>
+    <a href="{{ url_for('index') }}">Home</a>
+  </div>
+</nav>
+
+<div class="results-wrap">
+  <h1 style="font-size:2rem;margin-bottom:10px;">How Greedy Best-First Search works</h1>
+  <p style="color:var(--text-muted);line-height:1.6;">
+    GBFS is a search strategy that always expands whichever node in the
+    open list <em>appears</em> closest to the goal right now &mdash; nothing more.
+  </p>
+
+  <div class="formula-box" style="margin-top:24px;">f(n) = h(n)</div>
+  <p style="color:var(--text-muted);line-height:1.6;">
+    On this grid, <code>h(n)</code> is Manhattan distance:
+  </p>
+  <div class="formula-box">h(n) = |x &minus; goal_x| + |y &minus; goal_y|</div>
+
+  <p style="color:var(--text-muted);line-height:1.6;">
+    The open list is a priority queue ordered strictly by <code>h(n)</code>.
+    That's the entire algorithm: pop the smallest-<code>h</code> node, check if
+    it's the goal, otherwise push its unvisited neighbors and repeat.
+    It never looks at <code>g(n)</code>, the cost already paid to get there &mdash;
+    which is exactly what separates it from A*.
+  </p>
+
+  <h2 style="font-size:1.3rem;margin-top:40px;">Algorithm comparison</h2>
+  <table class="compare-table" id="compare-table">
+    <thead>
+      <tr><th>Algorithm</th><th>Uses heuristic?</th><th>Uses path cost?</th><th>Typical behavior</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="algo-name">BFS</td><td>No</td><td>Yes, by levels</td><td>Explores uniformly outward</td></tr>
+      <tr><td class="algo-name">DFS</td><td>No</td><td>No</td><td>Goes deep down one branch first</td></tr>
+      <tr class="highlight"><td class="algo-name">GBFS</td><td>Yes</td><td>No</td><td>Goal-directed, fast, not guaranteed optimal</td></tr>
+      <tr><td class="algo-name">A*</td><td>Yes</td><td>Yes</td><td>Cost + heuristic &mdash; optimal with an admissible heuristic</td></tr>
+    </tbody>
+  </table>
+  <p style="color:var(--text-faint);font-size:0.85rem;margin-top:10px;">
+    This is an educational comparison &mdash; Greedy Quest's actual solver is always GBFS.
+  </p>
+
+  <h2 style="font-size:1.3rem;margin-top:40px;" id="lab">Why GBFS isn't always optimal</h2>
+  <p style="color:var(--text-muted);line-height:1.6;">
+    Because GBFS ignores path cost, it can commit early to the direction that
+    looks best and get stuck detouring around an obstacle, even when a
+    slightly-less-tempting-looking route would have been shorter overall.
+    Try <strong>Challenge Level 3 &middot; Greedy Trap</strong> in-game: the
+    treasure sits just past a walled pocket, and a purely heuristic-driven
+    search walks straight at it before realizing it has to go around.
+  </p>
+  <a class="btn btn-teal" href="{{ url_for('game_page') }}?level=3">Try the Greedy Trap &rarr;</a>
+</div>
+
+<footer class="site-footer">Greedy Quest &mdash; an AI Project-Based Learning demo.</footer>
+
+</body>
+</html>

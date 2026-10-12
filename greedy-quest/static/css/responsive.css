@@ -1,0 +1,27 @@
+/* ============================================================
+   GREEDY QUEST -- responsive rules
+   ============================================================ */
+
+@media (max-width: 900px) {
+  .game-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+  .side-panel {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 52vh;
+  }
+  .feature-row { grid-template-columns: 1fr; }
+  .hud-stats { gap: 16px; font-size: 0.8rem; }
+  .vs-row { grid-template-columns: 1fr; }
+  .vs-divider { justify-self: center; }
+}
+
+@media (max-width: 640px) {
+  .nav-links { display: none; }
+  .hud-title span:not(.dot) { font-size: 0.95rem; }
+  .dpad { display: grid; justify-self: center; }
+  .control-grid { grid-template-columns: 1fr 1fr; }
+  .hero h1 { font-size: 2.4rem; }
+}

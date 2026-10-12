@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Greedy Quest -- an AI treasure hunt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="brand"><span>Greedy Quest</span><span class="dot">&#9670;</span></div>
+  <div class="nav-links">
+    <a href="{{ url_for('game_page') }}">Play</a>
+    <a href="{{ url_for('game_page') }}?watch=1">Watch AI</a>
+    <a href="{{ url_for('algorithm_page') }}">How it works</a>
+    <a href="{{ url_for('algorithm_page') }}#lab">Algorithm lab</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-grid-bg" aria-hidden="true"></div>
+  <div class="hero-inner">
+    <div class="hero-eyebrow">h(n) = |x - goal_x| + |y - goal_y|</div>
+    <h1>Can you reach the <span class="accent">treasure</span> before the algorithm?</h1>
+    <p class="hero-sub">
+      An interactive pathfinding game powered by Greedy Best-First Search.
+      Race across a procedurally generated grid, then hand the map to an
+      AI navigator and watch it choose a path, one heuristic decision
+      at a time.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="{{ url_for('game_page') }}">Play game</a>
+      <a class="btn btn-teal" href="{{ url_for('game_page') }}?watch=1">Watch AI think</a>
+      <a class="btn btn-ghost" href="{{ url_for('algorithm_page') }}">How it works</a>
+    </div>
+  </div>
+</header>
+
+<section class="feature-row">
+  <div class="feature-item">
+    <div class="feature-mark"><span class="swatch" style="background:var(--gold)"></span>manual mode</div>
+    <h3>Play it yourself</h3>
+    <p>Move with arrow keys or WASD through walls, traps and dead ends. Every move and second costs you points.</p>
+  </div>
+  <div class="feature-item">
+    <div class="feature-mark"><span class="swatch" style="background:var(--teal)"></span>watch ai think</div>
+    <h3>See the search happen</h3>
+    <p>Step through the real open list and heuristic values GBFS evaluates before it ever commits to a move.</p>
+  </div>
+  <div class="feature-item">
+    <div class="feature-mark"><span class="swatch" style="background:var(--violet)"></span>greedy trap</div>
+    <h3>Find its blind spot</h3>
+    <p>A goal that looks close isn't always close. See exactly where a pure heuristic strategy gets fooled.</p>
+  </div>
+</section>
+
+<footer class="site-footer">
+  Greedy Quest &mdash; an AI Project-Based Learning demo of Greedy Best-First Search.
+</footer>
+
+</body>
+</html>
